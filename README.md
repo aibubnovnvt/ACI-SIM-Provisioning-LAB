@@ -1,7 +1,7 @@
 # ACI-SIM Provisioning LAB
 
 ACI-SIM provisioning lab scripts. This project provisions an ACI-SIM fabric from scratch via Ansible and makes it
-available for integration with the other components of the network.
+available for integration with the other components of the lab network.
 
 ---
 
