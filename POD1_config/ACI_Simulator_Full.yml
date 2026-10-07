@@ -1,0 +1,305 @@
+---
+- name: Setup and Configure ACI Simulator
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+  - community.vmware
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    vmware_info: &vmware_info
+      hostname: "{{ vcenter_host }}"
+      username: "{{ vcenter_username }}"
+      password: "{{ vcenter_password }}"
+      validate_certs: "{{ validate_certs }}"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+    vm_vcpu_min: 12 #vCPUs
+    vm_vram_min: 32768 #vRAM in MB
+    vm_needs_mods: no # Boolean to keep track if VM meets requirements
+    nodes: # Can change switch name, but must keep node_id, serial, role as is
+      - switch_name: "Leaf101"
+        node_id: 101
+        serial: "TEP-1-101"
+        role: "leaf"
+      - switch_name: "Spine201"
+        node_id: 201
+        serial: "TEP-1-103"
+        role: "spine"
+      - switch_name: "Leaf102" # Isn't used in small fabric
+        node_id: 102
+        serial: "TEP-1-102"
+        role: "leaf"
+
+  tasks:
+    - name: Debug Output - Host Variables
+      debug:
+        msg: "{{ hostvars }}"
+      when:
+        - debug_output
+      tags:
+        - vm_debug
+
+    #- name: Install specified python requirements
+    #  pip:
+    #    requirements: ./requirements.txt
+    #  tags:
+    #    - pip_debug
+
+    - name: Get VM info
+      vmware_guest_info:
+        <<: *vmware_info
+        datacenter: "{{ vm_dc }}"
+        name: "{{ vm_name }}"
+      register: vm_info
+      tags:
+        - vm_debug
+        - startup_script
+
+    - name: Debug Output - VM Info
+      debug:
+        msg: "VM Info {{ vm_info }}"
+      when:
+        - debug_output
+      tags:
+        - vm_debug
+        - vmware_pg_check
+
+    - name: Change VM power state - Power Cycle
+      vmware_guest_powerstate:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        state: "{{ 'restarted' if vm_info.instance.hw_power_status == 'poweredOn' else 'powered-on' }}"
+      when:
+        - not vm_needs_mods
+      tags:
+        - vm_debug
+
+    - name: Wait for ACI Sim VM to Boot
+      pause:
+        seconds: "{{ wait_time }}"
+
+    - name: Configure ACI Sim via VM console - APIC Startup Script
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER #ACI Fabric Name - input order based off ACI 5.2 and 6.0(2)
+          - ENTER #Fabric ID
+          - ENTER #Active Controllers
+          - ENTER #Standby Controller
+          - ENTER #Controller ID
+          - ENTER #APIC over L3 / Standalone APIC Cluster
+          - ENTER #POD ID
+          - ENTER #Controller Name          
+          - ENTER #TEP Address Pool
+          - ENTER #Infra VLAN ID
+          - ENTER #BD Multicast GIPO
+          - ENTER #IPv6 OOB Mgmt
+        sleep_time: 1
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - IPv4 Address
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        string_send: "{{ apic_host }}{{ apic_mask }}"
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - IPv4 Address Confirm
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Default Gateway Address
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        string_send: "{{ apic_gateway }}"
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Default Gateway Address Confirm
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER #Confirm Gateway
+          - ENTER #Speed/Duplex
+        sleep_time: 1
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Disable Strong Passwords
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        string_send: "N"
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Disable Strong Passwords Confirm
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER #Confirm Disabled Strong Passwords
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Enter Password
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        string_send: "{{ apic_pass }}"
+      no_log: yes
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Enter Password Execute
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER #Confirm Password
+      no_log: yes
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Confirm Password
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        string_send: "{{ apic_pass }}"
+      no_log: yes
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Confirm Password Execute
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER #Confirm Password
+      no_log: yes
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Edit Configuration
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        string_send: "N"
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Configure ACI Sim via VM console - Use current configuration
+      vmware_guest_sendkey:
+        <<: *vmware_info
+        moid: "{{ vm_info.instance.moid }}"
+        keys_send:
+          - ENTER #Confirm
+      no_log: no
+      tags:
+        - startup_script
+
+    - name: Wait for APIC Processes to start before attempting to Log-in
+      pause:
+        seconds: 400
+      tags:
+        - startup_script
+
+    - name: Check and wait for AAA service to become available
+      uri:
+        method: POST
+        url: https://{{ apic_host }}/api/aaaLogin.json
+        validate_certs: "{{ apic_validate_certs }}"
+        body_format: json
+        body:
+          aaaUser:
+            attributes:
+              name: "{{ apic_user }}"
+              pwd: "{{ apic_pass }}"
+      register: aaa_info
+      until: aaa_info.status == 200
+      retries: 15
+      delay: 30
+      tags:
+        - fabric_registration
+
+    - name: Register SN as new node
+      aci_rest:
+        <<: *aci_login
+        method: post
+        path: /api/node/mo/uni/controller/nodeidentpol.json
+        content: |
+          {
+            "fabricNodeIdentP": {
+              "attributes": {
+                "dn": "uni/controller/nodeidentpol/nodep-{{ item.serial }}",
+                "serial": "{{ item.serial }}",
+                "nodeId": "{{ item.node_id }}",
+                "name": "{{ item.switch_name }}",
+                "status": "created,modified"
+              },
+              "children": []
+            }
+          }
+      with_items: "{{ nodes }}"
+      tags:
+        - fabric_registration
+
+    - name: Wait for nodes to discover before attempting to validate
+      pause:
+        seconds: 60
+      when:
+        - wait_node_reg
+      tags:
+        - fabric_registration
+
+    - name: Wait for nodes to become ready and active
+      aci_rest:
+        <<: *aci_login
+        path: /api/node/class/fabricNode.json?query-target-filter=and(eq(fabricNode.serial,"{{ item.serial }}"))
+      register: leaf
+      until: "'totalCount' in leaf and leaf.totalCount|int >= 1 and leaf.imdata[0].fabricNode.attributes.fabricSt == 'active'"
+      retries: 8
+      delay: 20
+      delegate_to: localhost
+      run_once: yes
+      with_items: "{{ nodes }}"
+      ignore_errors: true
+      when:
+        - wait_node_reg
+      tags:
+        - fabric_registration
+
+    - name: Finished ACI Simulator Setup
+      debug:
+        msg:
+          - "ACI Simulator Setup is complete"
+          - "Log in via https://{{ apic_host }}/"
+          - "User: {{ apic_user }}"
+          - "Pass: {{ apic_pass }}"
+      tags:
+        - fabric_registration
+

@@ -1,0 +1,538 @@
+---
+- name: Configure ACI Simulator Interfaces Policies and L3OUTs
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+    - cisco.aci
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+ # Parameters used by L3Outs but owned by a tenant
+    state: 'present'
+    ospf_if_policy:
+#     tenant: 'Ansible'       # can be under common and reuse it everywhere
+      name: 'p2p'
+      network_type: 'p2p'     # p2p|bcast
+
+    # Throttle/retry tuning for ACI Simulator (avoid HTTP 503 overload).
+    # There are no loops in this playbook, so we pace requests with an
+    # explicit pause task after each ACI call instead of loop_control.pause.
+    aci_task_pause: 2
+    aci_retries: 3
+    aci_retry_delay: 5
+
+    l3out_t1_vrf1:
+      # Basic L3Out parameters
+      name: '{{ l3out_t1_vrf1_name }}'
+      tenant: '{{ tenant1_name }}'
+      vrf: '{{ tenant1_vrf1_name }}'
+      domain: 'L3Dom'
+      route_control: ['export']
+      proto: 'ospf'
+      ospf_area_id: '0'
+      ospf_area_type: 'regular'   # regular|nssa|stub
+      ospf_area_cost: '1'
+      node:
+        profile: 'LabNodes1'
+        pod_id: '1'
+        node_id: '101'
+        router_id: '{{ node101_rid }}'
+        router_id_as_loopback: 'no'
+        interface:
+          profile: 'Interfaces1'
+          pod_id: '1'
+          node_id: '101'
+          if_path: 'eth1/3'
+          if_type: 'l3-port'  # l3-port|sub-interface|ext-svi
+          addr: '{{ t1vrf1_l3out_p2p }}'
+          mtu: '1500'
+
+    l3out_t1_vrf2:
+      # Basic L3Out parameters
+      name: '{{ l3out_t1_vrf2_name }}'
+      tenant: '{{ tenant1_name }}'
+      vrf: '{{ tenant1_vrf2_name }}'
+      domain: 'L3Dom'
+      route_control: ['export']
+      proto: 'ospf'
+      ospf_area_id: '0'
+      ospf_area_type: 'regular'   # regular|nssa|stub
+      ospf_area_cost: '1'
+      node:
+        profile: 'LabNodes2'
+        pod_id: '1'
+        node_id: '102'
+        router_id: '{{ node102_rid }}'
+        router_id_as_loopback: 'no'
+        interface:
+          profile: 'Interfaces2'
+          pod_id: '1'
+          node_id: '102'
+          if_path: 'eth1/3'
+          if_type: 'l3-port'  # l3-port|sub-interface|ext-svi
+          addr: '{{ t1vrf2_l3out_p2p }}'
+          mtu: '1500'
+
+    l3out_t2_vrf1:
+      # Basic L3Out parameters
+      name: '{{ l3out_t2_vrf1_name }}'
+      tenant: '{{ tenant2_name }}'
+      vrf: '{{ tenant2_vrf1_name }}'
+      domain: 'L3Dom'
+      route_control: ['export']
+      proto: 'ospf'
+      ospf_area_id: '0'
+      ospf_area_type: 'regular'   # regular|nssa|stub
+      ospf_area_cost: '1'
+      # Node and interface parameters
+      node:
+        profile: 'LabNodes3'
+        pod_id: '1'
+        node_id: '102'
+        router_id: '{{ node102_rid }}'
+        router_id_as_loopback: 'no'
+        interface:
+          profile: 'Interfaces3'
+          pod_id: '1'
+          node_id: '102'
+          if_path: 'eth1/2'
+          if_type: 'l3-port'  # l3-port|sub-interface|ext-svi
+          addr: '{{ t1vrf2_l3out_p2p }}'
+          mtu: '1500'
+
+  tasks:
+    # ------------------------------------
+    # Configure L3Out (OSPF) Tenant1 VRF1
+    # ------------------------------------
+    - name: 'Create L3Out `{{ l3out_t1_vrf1.name }}`'
+      cisco.aci.aci_l3out:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        vrf: '{{ tenant1_vrf1_name }}'
+        name: '{{ l3out_t1_vrf1.name }}'
+        domain: '{{ l3out_t1_vrf1.domain }}'
+        route_control: '{{ l3out_t1_vrf1.route_control }}'
+        l3protocol: '{{ l3out_t1_vrf1.proto }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure L3Out OSPF Area'
+      cisco.aci.aci_rest:
+        <<: *aci_login
+        path: '/api/mo/uni/tn-{{ tenant1_name }}/out-{{ l3out_t1_vrf1.name }}.json'
+        method: 'post'
+        content: '{{  lookup("template", "ospf_area.j2")  }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create L3Out Node Profile `{{ l3out_t1_vrf1.node.profile }}`'
+      cisco.aci.aci_l3out_logical_node_profile:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf1.name }}'
+        node_profile: '{{ l3out_t1_vrf1.node.profile }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure a node in the Node Profile'
+      cisco.aci.aci_l3out_logical_node:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf1.name }}'
+        node_profile: '{{ l3out_t1_vrf1.node.profile }}'
+        pod_id: '{{ l3out_t1_vrf1.node.pod_id }}'
+        node_id: '{{ l3out_t1_vrf1.node.node_id }}'
+        router_id: '{{ l3out_t1_vrf1.node.router_id }}'
+        router_id_as_loopback: '{{ l3out_t1_vrf1.node.router_id_as_loopback }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create L3Out Interface Profile `{{ l3out_t1_vrf1.node.interface.profile }}`'
+      cisco.aci.aci_l3out_logical_interface_profile:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf1.name }}'
+        node_profile: '{{ l3out_t1_vrf1.node.profile }}'
+        interface_profile: '{{ l3out_t1_vrf1.node.interface.profile }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure an interface in the Interface Profile'
+      cisco.aci.aci_l3out_interface:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf1.name }}'
+        node_profile: '{{ l3out_t1_vrf1.node.profile }}'
+        interface_profile: '{{ l3out_t1_vrf1.node.interface.profile }}'
+        pod_id: '{{ l3out_t1_vrf1.node.interface.pod_id }}'
+        node_id: '{{ l3out_t1_vrf1.node.interface.node_id }}'
+        path_ep: '{{ l3out_t1_vrf1.node.interface.if_path }}'
+        interface_type: '{{ l3out_t1_vrf1.node.interface.if_type }}'
+        addr: '{{ l3out_t1_vrf1.node.interface.addr }}'
+        mtu: '{{ l3out_t1_vrf1.node.interface.mtu }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create OSPF Interface Policy `{{ ospf_if_policy.name }}` in tenant `{{ tenant1_name }}`'
+      cisco.aci.aci_interface_policy_ospf:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        name: '{{ ospf_if_policy.name }}'
+        network_type: '{{ ospf_if_policy.network_type }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create an OSPF Interface Profile with OSPF Interface Policy `{{ ospf_if_policy.name }}`'
+      cisco.aci.aci_rest:
+        <<: *aci_login
+        path: '/api/mo/uni/tn-{{ tenant1_name }}/out-{{ l3out_t1_vrf1.name }}/lnodep-{{ l3out_t1_vrf1.node.profile }}/lifp-{{ l3out_t1_vrf1.node.interface.profile }}.json'
+        method: 'post'
+        content: '{{ lookup("template", "ospf_if_profile.j2") }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    # ------------------------------------
+    # Configure L3Out (OSPF) Tenant1 VRF2
+    # ------------------------------------
+    - name: 'Create L3Out `{{ l3out_t1_vrf2.name }}`'
+      cisco.aci.aci_l3out:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        vrf: '{{ tenant1_vrf2_name }}'
+        name: '{{ l3out_t1_vrf2.name }}'
+        domain: '{{ l3out_t1_vrf2.domain }}'
+        route_control: '{{ l3out_t1_vrf2.route_control }}'
+        l3protocol: '{{ l3out_t1_vrf2.proto }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure L3Out OSPF Area'
+      cisco.aci.aci_rest:
+        <<: *aci_login
+        path: '/api/mo/uni/tn-{{ tenant1_name }}/out-{{ l3out_t1_vrf2.name }}.json'
+        method: 'post'
+        content: '{{  lookup("template", "ospf_area.j2")  }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create L3Out Node Profile `{{ l3out_t1_vrf2.node.profile }}`'
+      cisco.aci.aci_l3out_logical_node_profile:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf2.name }}'
+        node_profile: '{{ l3out_t1_vrf2.node.profile }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure a node in the Node Profile'
+      cisco.aci.aci_l3out_logical_node:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf2.name }}'
+        node_profile: '{{ l3out_t1_vrf2.node.profile }}'
+        pod_id: '{{ l3out_t1_vrf2.node.pod_id }}'
+        node_id: '{{ l3out_t1_vrf2.node.node_id }}'
+        router_id: '{{ l3out_t1_vrf2.node.router_id }}'
+        router_id_as_loopback: '{{ l3out_t1_vrf2.node.router_id_as_loopback }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create L3Out Interface Profile `{{ l3out_t1_vrf2.node.interface.profile }}`'
+      cisco.aci.aci_l3out_logical_interface_profile:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf2.name }}'
+        node_profile: '{{ l3out_t1_vrf2.node.profile }}'
+        interface_profile: '{{ l3out_t1_vrf2.node.interface.profile }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure an interface in the Interface Profile'
+      cisco.aci.aci_l3out_interface:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        l3out: '{{ l3out_t1_vrf2.name }}'
+        node_profile: '{{ l3out_t1_vrf2.node.profile }}'
+        interface_profile: '{{ l3out_t1_vrf2.node.interface.profile }}'
+        pod_id: '{{ l3out_t1_vrf2.node.interface.pod_id }}'
+        node_id: '{{ l3out_t1_vrf2.node.interface.node_id }}'
+        path_ep: '{{ l3out_t1_vrf2.node.interface.if_path }}'
+        interface_type: '{{ l3out_t1_vrf2.node.interface.if_type }}'
+        addr: '{{ l3out_t1_vrf2.node.interface.addr }}'
+        mtu: '{{ l3out_t1_vrf2.node.interface.mtu }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create OSPF Interface Policy `{{ ospf_if_policy.name }}` in tenant `{{ tenant1_name }}`'
+      cisco.aci.aci_interface_policy_ospf:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        name: '{{ ospf_if_policy.name }}'
+        network_type: '{{ ospf_if_policy.network_type }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create an OSPF Interface Profile with OSPF Interface Policy `{{ ospf_if_policy.name }}`'
+      cisco.aci.aci_rest:
+        <<: *aci_login
+        path: '/api/mo/uni/tn-{{ tenant1_name }}/out-{{ l3out_t1_vrf2.name }}/lnodep-{{ l3out_t1_vrf2.node.profile }}/lifp-{{ l3out_t1_vrf2.node.interface.profile }}.json'
+        method: 'post'
+        content: '{{ lookup("template", "ospf_if_profile.j2") }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    # ------------------------------------
+    # Configure L3Out (OSPF) Tenant1 VRF2
+    # ------------------------------------
+    - name: 'Create L3Out `{{ l3out_t2_vrf1.name }}`'
+      cisco.aci.aci_l3out:
+        <<: *aci_login
+        tenant: '{{ tenant2_name }}'
+        vrf: '{{ tenant2_vrf1_name }}'
+        name: '{{ l3out_t2_vrf1.name }}'
+        domain: '{{ l3out_t2_vrf1.domain }}'
+        route_control: '{{ l3out_t2_vrf1.route_control }}'
+        l3protocol: '{{ l3out_t2_vrf1.proto }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure L3Out OSPF Area'
+      cisco.aci.aci_rest:
+        <<: *aci_login
+        path: '/api/mo/uni/tn-{{ tenant2_name }}/out-{{ l3out_t2_vrf1.name }}.json'
+        method: 'post'
+        content: '{{  lookup("template", "ospf_area.j2")  }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create L3Out Node Profile `{{ l3out_t2_vrf1.node.profile }}`'
+      cisco.aci.aci_l3out_logical_node_profile:
+        <<: *aci_login
+        tenant: '{{ tenant2_name }}'
+        l3out: '{{ l3out_t2_vrf1.name }}'
+        node_profile: '{{ l3out_t2_vrf1.node.profile }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure a node in the Node Profile'
+      cisco.aci.aci_l3out_logical_node:
+        <<: *aci_login
+        tenant: '{{ tenant2_name }}'
+        l3out: '{{ l3out_t2_vrf1.name }}'
+        node_profile: '{{ l3out_t2_vrf1.node.profile }}'
+        pod_id: '{{ l3out_t2_vrf1.node.pod_id }}'
+        node_id: '{{ l3out_t2_vrf1.node.node_id }}'
+        router_id: '{{ l3out_t2_vrf1.node.router_id }}'
+        router_id_as_loopback: '{{ l3out_t2_vrf1.node.router_id_as_loopback }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create L3Out Interface Profile `{{ l3out_t2_vrf1.node.interface.profile }}`'
+      cisco.aci.aci_l3out_logical_interface_profile:
+        <<: *aci_login
+        tenant: '{{ tenant2_name }}'
+
+        l3out: '{{ l3out_t2_vrf1.name }}'
+        node_profile: '{{ l3out_t2_vrf1.node.profile }}'
+        interface_profile: '{{ l3out_t2_vrf1.node.interface.profile }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Configure an interface in the Interface Profile'
+      cisco.aci.aci_l3out_interface:
+        <<: *aci_login
+        tenant: '{{ tenant2_name }}'
+        l3out: '{{ l3out_t2_vrf1.name }}'
+        node_profile: '{{ l3out_t2_vrf1.node.profile }}'
+        interface_profile: '{{ l3out_t2_vrf1.node.interface.profile }}'
+        pod_id: '{{ l3out_t2_vrf1.node.interface.pod_id }}'
+        node_id: '{{ l3out_t2_vrf1.node.interface.node_id }}'
+        path_ep: '{{ l3out_t2_vrf1.node.interface.if_path }}'
+        interface_type: '{{ l3out_t2_vrf1.node.interface.if_type }}'
+        addr: '{{ l3out_t2_vrf1.node.interface.addr }}'
+        mtu: '{{ l3out_t2_vrf1.node.interface.mtu }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create OSPF Interface Policy `{{ ospf_if_policy.name }}` in tenant `{{ tenant2_name }}`'
+      cisco.aci.aci_interface_policy_ospf:
+        <<: *aci_login
+        tenant: '{{ tenant2_name }}'
+        name: '{{ ospf_if_policy.name }}'
+        network_type: '{{ ospf_if_policy.network_type }}'
+        state: '{{ state }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Pause between ACI requests
+      ansible.builtin.pause:
+        seconds: "{{ aci_task_pause }}"
+
+    - name: 'Create an OSPF Interface Profile with OSPF Interface Policy `{{ ospf_if_policy.name }}`'
+      cisco.aci.aci_rest:
+        <<: *aci_login
+        path: '/api/mo/uni/tn-{{ tenant2_name }}/out-{{ l3out_t2_vrf1.name }}/lnodep-{{ l3out_t2_vrf1.node.profile }}/lifp-{{ l3out_t2_vrf1.node.interface.profile }}.json'
+        method: 'post'
+        content: '{{ lookup("template", "ospf_if_profile.j2") }}'
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"

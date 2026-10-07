@@ -1,0 +1,97 @@
+---
+- name: Configure ACI Simulator Interfaces Policies and L3OUTs
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+    - cisco.aci
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+
+  tasks:
+
+    - name: Add a new ESG APP_FRONT
+      cisco.aci.aci_esg:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Front
+        vrf: '{{ tenant1_vrf2_name }}'
+        description: Frontend
+        state: present
+      delegate_to: localhost
+
+    - name: Add a new ESG APP_BACK
+      cisco.aci.aci_esg:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Back
+        vrf: '{{ tenant1_vrf2_name }}'
+        description: Backend
+        state: present
+      delegate_to: localhost
+
+    - name: Add an IP subnet selector 1
+      cisco.aci.aci_esg_ip_subnet_selector:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Back
+        ip: '{{ esg_subnet_selector_1 }}'
+        description: "IP Subnet Selector Blue-BD1"
+        state: present
+      delegate_to: localhost
+
+    - name: Add an IP subnet selector 2
+      cisco.aci.aci_esg_ip_subnet_selector:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Back
+        ip: '{{ esg_subnet_selector_2 }}'
+        description: "IP Subnet Selector Blue-BD2"
+        state: present
+      delegate_to: localhost
+
+    - name: Add an EPG selector
+      cisco.aci.aci_esg_epg_selector:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Front
+        epg_ap: APP-B
+        epg: '{{ tenant1_epg4 }}'
+        description: epg-test-description
+        state: present
+      delegate_to: localhost
+
+    - name: Add an ESG contract master
+      cisco.aci.aci_esg_contract_master:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Front
+        contract_master_ap: APP-B
+        contract_master_esg: APP_Back
+        state: present
+      delegate_to: localhost
+
+
+    - name: Add a new contract to ESG binding
+      cisco.aci.aci_esg_to_contract:
+        <<: *aci_login
+        tenant: '{{ tenant1_name }}'
+        ap: APP-B
+        esg: APP_Back
+        contract: APP-Back-ESG
+        contract_type: provider
+        state: present
+      delegate_to: localhost

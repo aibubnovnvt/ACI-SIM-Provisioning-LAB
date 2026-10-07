@@ -1,0 +1,283 @@
+---
+- name: Setup and Configure ACI Simulator
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+    - cisco.aci
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+    desired_state: 'present'
+
+    # Throttle/retry tuning for ACI Simulator (avoid HTTP 503 overload)
+    aci_loop_pause: 2
+    aci_retries: 3
+    aci_retry_delay: 5
+
+  tasks:
+  ################################################
+  #####     NODE AND INTERFACE PROFILES       ####
+  ################################################
+    - name: Create Leaf Profiles
+      cisco.aci.aci_switch_policy_leaf_profile:
+        <<: *aci_login
+        leaf_profile: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { name: "leaf101_profile", desc: "Profile for Leaf101" }
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - switch-profiles
+
+    - name: Add Leaf Selectors to Leaf Profiles
+      cisco.aci.aci_switch_leaf_selector:
+        <<: *aci_login
+        leaf_profile: "{{ item.name }}"
+        leaf: "{{ item.leaf }}"
+        leaf_node_blk: "{{ item.node_blk }}"
+        from: "{{ item.from }}"
+        to: "{{ item.to }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { name: "leaf101_profile", leaf: "leaf101", node_blk: "node_blk_101", from: "101", to: "101"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - switch-profiles
+      - switch-profiles-leaf-selectors
+
+    - name: Add Leaf Interface Profiles
+      cisco.aci.aci_interface_policy_leaf_profile:
+        <<: *aci_login
+        leaf_interface_profile: "{{ item.name }}"
+        description: "created with Ansible"
+        state: "{{ desired_state }}"
+      loop:
+        - { name: "leaf101_interfaces"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - interface_profiles
+
+    - name: Associate Leaf Interface Profile to Switch Profile
+      cisco.aci.aci_interface_selector_to_switch_policy_leaf_profile:
+        <<: *aci_login
+        leaf_profile: "{{ item.leaf }}"
+        interface_selector: "{{ item.interface }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { leaf: "leaf101_profile", interface: "leaf101_interfaces"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - interface_profiles
+
+    - name: Create Leaf Access Port Policy Group
+      cisco.aci.aci_interface_policy_leaf_policy_group:
+        <<: *aci_login
+        lag_type: leaf
+        policy_group: "{{ item.name}}"
+        aep: "{{ item.aep }}"
+        description: "{{ item.desc }}"
+        link_level_policy: 'system-link-level-10G-auto'
+        state: "{{ desired_state }}"
+      loop:
+        - { name: "lab_access_PolG", aep: "lab_access_aaep1", desc: "ACP for Lab Access Port emulation"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - interface_policy_group
+
+
+    - name: Associate Interface Selector to Interface Leaf Profile
+      cisco.aci.aci_access_port_to_interface_policy_leaf_profile:
+        <<: *aci_login
+        leaf_interface_profile: "{{ item.ifProf}}"
+        access_port_selector: "{{ item.ifSel}}"
+        interface_type: "{{ item.iftype}}"
+        leaf_port_blk: "{{ item.lfblk }}"
+        from_port: "{{ item.from }}"
+        to_port: "{{ item.end }}"
+        policy_group: "{{ item.polGrp}}"
+        state: "{{ desired_state }}"
+      loop:
+              - { ifProf: "leaf101_interfaces", ifSel: "eth_1_1", iftype: "switch_port", lfblk: "1", from: "1", end: "1", polGrp: "lab_access_PolG"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - interface_policy_group
+      - port_blocks
+
+  ################################################
+  #####           INTERFACE POLICIES          ####
+  ################################################
+#    - name: Create Interface Policy for Link Level Options with cisco.aci.aci_rest
+#      cisco.aci.aci_rest:
+#        <<: *aci_login
+#        method: post
+#        path: /api/mo/uni.xml
+#        content: '<infraInfra><fabricHIfPol name="{{ item.name }}" descr="{{ item.descr }}" speed="{{ item.speed }}" linkDebounce="{{ item.linkDebounce}}" fecMode="{{item.fec}}" autoNeg="{{ item.autoneg }}"/></infraInfra>'
+#      loop:
+#        - { name: "link-100M", descr: "100Mbps", speed: "100M", linkDebounce: "100", fec: "inherit", autoneg: "on" }
+#        - { name: "link-1G", descr: "1Gbps", speed: "1G", linkDebounce: "100", fec: "inherit", autoneg: "on" }
+#        - { name: "link-10G", descr: "10Gbps", speed: "10G", linkDebounce: "100", fec: "inherit", autoneg: "on" }
+#        - { name: "link-25G", descr: "25Gbps - use with short-length passive cables", speed: "25G", linkDebounce: "100", fec: "inherit", autoneg: "on" }
+#        - { name: "link-25G-FEC-CL74-FC", descr: "25Gbps - use with 3-meter passive cable and 1 to 10-meter active cables", speed: "25G", linkDebounce: "100", fec: "cl74-fc-fec", autoneg: "on" }
+#        - { name: "link-25G-FEC-CL91-RC", descr: "25Gbps - use with 5-meter passive cable and 100-meter SPF-25G-SR or SPF-25G-LR", speed: "25G", linkDebounce: "100", fec: "cl91-rs-fec", autoneg: "on" }
+#        - { name: "link-40G", descr: "40Gbps", speed: "40G", linkDebounce: "100", fec: "inherit", autoneg: "on" }
+#        - { name: "link-100G", descr: "100Gbps", speed: "100G", linkDebounce: "100", fec: "inherit", autoneg: "on" }
+#      tags:
+#      - interface_policies
+#      - link_level
+
+  ################################################
+  #####              VLAN POOLS               ####
+  ################################################
+    - name: Create Vlan Pools
+      cisco.aci.aci_vlan_pool:
+        <<: *aci_login
+        pool: "{{ item.pool }}"
+        pool_allocation_mode: "{{ item.allocation }}"
+        description: "{{ item.desc }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { pool: "lab_vlan_pool1", allocation: "static", desc: "pool for lab" }
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - vlan_pools
+
+    - name: Add Vlan encap blocks to Vlan Pools
+      cisco.aci.aci_vlan_pool_encap_block:
+        <<: *aci_login
+        pool: "{{ item.pool }}"
+        pool_allocation_mode: "{{ item.allocation }}"
+        block_name: "blockname_{{item.start}}_{{item.end}}"
+        block_start: "{{ item.start }}"
+        block_end: "{{ item.end }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { pool: "lab_vlan_pool1", start: "10", end: "199", allocation: "static" }
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - vlan_pools
+      - encap_blocks
+
+  ################################################
+  #####              DOMAINS                  ####
+  ################################################
+    - name: Create non-VMM domains
+      cisco.aci.aci_domain:
+        <<: *aci_login
+        domain: "{{ item.dom }}"
+        domain_type: "{{ item.type }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { dom: "lab_access_bare_metal", type: "phys"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - physical_domains
+
+    - name: Bind non-VMM Domains to Vlan Pools
+      cisco.aci.aci_domain_to_vlan_pool:
+        <<: *aci_login
+        domain: "{{ item.dom }}"
+        domain_type: "{{ item.type }}"
+        pool: "{{ item.pool }}"
+        pool_allocation_mode: "{{ item.allocation}}"
+        state: "{{ desired_state }}"
+      loop:
+        - { dom: "lab_access_bare_metal", type: "phys", pool: "lab_vlan_pool1", allocation: "static"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - physical_domains
+
+  ################################################
+  #####                AAEP                   ####
+  ################################################
+    - name: Create AAEPs
+      cisco.aci.aci_aep:
+        <<: *aci_login
+        aep: "{{ item.name }}"
+        description: " {{ item.desc }}"
+        state: "{{ desired_state }}"
+      loop:
+        - { name: "lab_access_aaep1", desc: "lab access emulation" }
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - aaep
+
+    - name: Bind AAEPs to non-VMM Domains
+      cisco.aci.aci_aep_to_domain:
+        <<: *aci_login
+        aep: "{{ item.name }}"
+        domain: "{{ item.dom}}"
+        domain_type: "{{ item.type}}"
+        state: "{{ desired_state }}"
+      loop:
+        - { name: "lab_access_aaep1", dom: "lab_access_bare_metal", type: "phys"}
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      tags:
+      - aaep

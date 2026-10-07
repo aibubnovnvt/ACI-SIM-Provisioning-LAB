@@ -1,0 +1,77 @@
+---
+all:
+    vars:
+        vcenter_host: "198.18.1.100"
+        vcenter_password: "C!sc0123"
+        vcenter_username: "labuser"
+        validate_certs: no
+        vm_dc: "TS"                     # Match the Data Center name from your vCenter
+        vm_name: "APIC-6.2"   # Exact name of the ACI Sim you've deployed from the OVA in vCenter
+        newer_apic_sim: yes             # Set to yes if ACI Sim is 5.1(3) or newer, otherwise set to no
+        apic_large_topology: "n"        # y or n (must be lowercase), Choice available as of 5.1(3) ACI Simulator
+        wait_time: 400                  # Amount in seconds to wait for ACI Sim to boot before expecting Startup script. Set for ACI 6.0. Could be shortened for ACI 5.2
+        wait_time_script: 150            # Amount in seconds to wait for the ACI Start Up script to be presented after topology type selection
+        apic_host: "198.18.1.101"      # IP Address you want to assign the ACI Sim
+        apic_mask: "/24"                # Subnet Mask for the ACI Sim
+        apic_gateway: "198.18.1.1"     # Default Gateway for ACI Sim
+        apic_user: admin                # Username for the ACI Sim
+        apic_pass: C!sc0123           # Password to be configured for ACI Sim
+        apic_validate_certs: no         # Validate ACI SSL Certs
+        debug_output: no                # Initial debug output during run of playbook
+        wait_node_reg: no               # Set to yes if want to wait for nodes to become ready and active, otherwise set to no. Approx 3 mins
+        # Tenant playbook vars:
+        tenant1_name: "Tenant1"
+        tenant1_vrf1_name: "Green"
+        tenant1_vrf1_bd1_name: "Green-BD1"
+        tenant1_vrf1_bd1_gw_ip: "192.168.10.1"
+        tenant1_vrf1_bd1_mask: "24"
+        tenant1_vrf1_bd2_name: "Green-BD2"
+        tenant1_vrf1_bd2_gw_ip: "192.168.11.1"
+        tenant1_vrf1_bd2_mask: "24"
+        tenant1_vrf1_bd3_name: "Green-BD3"
+        tenant1_vrf1_bd3_gw_ip: "192.168.12.1"
+        tenant1_vrf1_bd3_mask: "24"
+        tenant1_vrf2_name: "Blue"
+        tenant1_vrf2_bd1_name: "Blue-BD1"
+        tenant1_vrf2_bd1_gw_ip: "192.168.13.1"
+        tenant1_vrf2_bd1_mask: "24"
+        tenant1_vrf2_bd2_name: "Blue-BD2"
+        tenant1_vrf2_bd2_gw_ip: "192.168.14.1"
+        tenant1_vrf2_bd2_mask: "24"
+        tenant1_vrf2_bd3_name: "Blue-BD3"
+        tenant1_vrf2_bd3_gw_ip: "192.168.15.1"
+        tenant1_vrf2_bd3_mask: "24"
+        tenant1_epg1: "10-Web"
+        tenant1_epg2: "11-App"
+        tenant1_epg3: "12-DB"
+        tenant1_epg4: "13-Web"
+        tenant1_epg5: "14-App"
+        tenant1_epg6: "15-DB"
+        tenant2_name: "Tenant2"
+        tenant2_vrf1_name: "Yellow"
+        tenant2_vrf1_bd1_name: "Yellow-BD1"
+        tenant2_vrf1_bd1_gw_ip: "192.168.16.1"
+        tenant2_vrf1_bd1_mask: "24"
+        tenant2_vrf1_bd2_name: "Yellow-BD2"
+        tenant2_vrf1_bd2_gw_ip: "192.168.17.1"
+        tenant2_vrf1_bd2_mask: "24"
+        tenant2_vrf1_bd3_name: "Yellow-BD3"
+        tenant2_vrf1_bd3_gw_ip: "192.168.18.1"
+        tenant2_vrf1_bd3_mask: "24"
+        tenant2_epg1: "16-Web"
+        tenant2_epg2: "17-App"
+        tenant2_epg3: "18-DB"
+        # Networking playbook vars:
+        node101_rid: "192.168.255.11"
+        node102_rid: "192.168.255.12"
+        node201_rid: "192.168.255.13"
+        t1vrf1_l3out_p2p: "198.18.11.1/30"
+        t1vrf2_l3out_p2p: "198.18.12.1/30"
+        t2vrf1_l3out_p2p: "198.18.13.1/30"
+        # ESG vars:
+        esg_subnet_selector_1: "192.168.14.0/24"
+        esg_subnet_selector_2: "192.168.15.0/24"
+        # L3OUTs:
+        l3out_t1_vrf1_name: "OSPF-T1-VRF-Green1"
+        l3out_t1_vrf2_name: "OSPF-T1-VRF-Blue1"
+        l3out_t2_vrf1_name: "OSPF-T2-VRF-Yellow1"

@@ -1,0 +1,636 @@
+---
+- name: Setup and Configure ACI Simulator
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+    - cisco.aci
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+
+    # Throttle/retry tuning for ACI Simulator (avoid HTTP 503 overload)
+    aci_loop_pause: 2
+    aci_retries: 3
+    aci_retry_delay: 5
+
+    tenant1:
+      name: '{{ tenant1_name }}'
+      state: 'present'
+      vrfs:
+        - name: '{{ tenant1_vrf1_name }}'
+          enforce: 'enforced'
+          descr: 'TEST VRF 1'
+          bds:
+            - name: '{{ tenant1_vrf1_bd1_name }}'
+              gw: '{{ tenant1_vrf1_bd1_gw_ip }}'
+              mask: '{{ tenant1_vrf1_bd1_mask }}'
+              scope: 'public,shared'
+            - name: '{{ tenant1_vrf1_bd2_name }}'
+              gw: '{{ tenant1_vrf1_bd2_gw_ip }}'
+              mask: '{{ tenant1_vrf1_bd2_mask }}'
+              scope: 'public,shared'
+            - name: '{{ tenant1_vrf1_bd3_name }}'
+              gw: '{{ tenant1_vrf1_bd3_gw_ip }}'
+              mask: '{{ tenant1_vrf1_bd3_mask }}'
+              scope: 'public,shared'
+        - name: '{{ tenant1_vrf2_name }}'
+          enforce: 'enforced'
+          descr: 'TEST VRF 2'
+          bds:
+            - name: '{{ tenant1_vrf2_bd1_name }}'
+              gw: '{{ tenant1_vrf2_bd1_gw_ip }}'
+              mask: '{{ tenant1_vrf2_bd1_mask }}'
+              scope: 'public,shared'
+            - name: '{{ tenant1_vrf2_bd2_name }}'
+              gw: '{{ tenant1_vrf2_bd2_gw_ip }}'
+              mask: '{{ tenant1_vrf2_bd2_mask }}'
+              scope: 'public,shared'
+            - name: '{{ tenant1_vrf2_bd3_name }}'
+              gw: '{{ tenant1_vrf2_bd3_gw_ip }}'
+              mask: '{{ tenant1_vrf2_bd3_mask }}'
+              scope: 'public,shared'
+      apps:
+        - name: 'APP-A'
+        - name: 'APP-B'
+      epgs:
+        - name: '{{ tenant1_epg1 }}'
+          descr: 'APP-A Web Service'
+          bd: '{{ tenant1_vrf1_bd1_name }}'
+          ap: 'APP-A'
+          domain: 'prod'
+        - name: '{{ tenant1_epg2 }}'
+          descr: 'APP-A App Service'
+          bd: '{{ tenant1_vrf1_bd2_name }}'
+          ap: 'APP-A'
+          domain: 'prod'
+        - name: '{{ tenant1_epg3 }}'
+          descr: 'APP-A DB Service'
+          bd: '{{ tenant1_vrf1_bd3_name }}'
+          ap: 'APP-A'
+          domain: 'prod'
+        - name: '{{ tenant1_epg4 }}'
+          descr: 'APP-B Web Service'
+          bd: '{{ tenant1_vrf2_bd1_name }}'
+          ap: 'APP-B'
+          domain: 'prod'
+        - name: '{{ tenant1_epg5 }}'
+          descr: 'APP-B App Service'
+          bd: '{{ tenant1_vrf2_bd2_name }}'
+          ap: 'APP-B'
+          domain: 'prod'
+        - name: '{{ tenant1_epg6 }}'
+          descr: 'APP-B DB Service'
+          bd: '{{ tenant1_vrf2_bd3_name }}'
+          ap: 'APP-B'
+          domain: 'prod'
+
+    tenant2:
+      name: '{{ tenant2_name }}'
+      state: 'present'
+      vrfs:
+        - name: '{{ tenant2_vrf1_name }}'
+          enforce: 'enforced'
+          descr: 'TEST VRF 3'
+          bds:
+            - name: '{{ tenant2_vrf1_bd1_name }}'
+              gw: '{{ tenant2_vrf1_bd1_gw_ip }}'
+              mask: '{{ tenant2_vrf1_bd1_mask }}'
+              scope: 'public,shared'
+            - name: '{{ tenant2_vrf1_bd2_name }}'
+              gw: '{{ tenant2_vrf1_bd2_gw_ip }}'
+              mask: '{{ tenant2_vrf1_bd2_mask }}'
+              scope: 'public,shared'
+            - name: '{{ tenant2_vrf1_bd3_name }}'
+              gw: '{{ tenant2_vrf1_bd3_gw_ip }}'
+              mask: '{{ tenant2_vrf1_bd3_mask }}'
+              scope: 'public,shared'
+      apps:
+        - name: 'APP-C'
+      epgs:
+        - name: '{{ tenant2_epg1 }}'
+          descr: 'APP-C Web Service'
+          bd: '{{ tenant2_vrf1_bd1_name }}'
+          ap: 'APP-C'
+          domain: 'prod'
+        - name: '{{ tenant2_epg2 }}'
+          descr: 'APP-C App Service'
+          bd: '{{ tenant2_vrf1_bd2_name }}'
+          ap: 'APP-C'
+          domain: 'prod'
+        - name: '{{ tenant2_epg3 }}'
+          descr: 'APP-C DB Service'
+          bd: '{{ tenant2_vrf1_bd3_name }}'
+          ap: 'APP-C'
+          domain: 'prod'
+
+    l3outs:
+      - name: 'internet'
+
+    contracts:
+      - contract: 'Web-access1'
+        subject: 'subject1'
+        filter: 'http'
+      - contract: 'Web-access1'
+        subject: 'subject2'
+        filter: 'icmp'
+      - contract: 'App-access1'
+        subject: 'subject1'
+        filter: 'app1'
+      - contract: 'App-access1'
+        subject: 'subject2'
+        filter: 'icmp'
+      - contract: 'DB-access1'
+        subject: 'subject1'
+        filter: 'sql'
+      - contract: 'DB-access1'
+        subject: 'subject2'
+        filter: 'icmp'
+      - contract: 'Web-access2'
+        subject: 'subject1'
+        filter: 'http'
+      - contract: 'Web-access2'
+        subject: 'subject2'
+        filter: 'icmp'
+      - contract: 'Web-access3'
+        subject: 'subject1'
+        filter: 'http'
+      - contract: 'Web-access3'
+        subject: 'subject2'
+        filter: 'icmp'
+      - contract: 'APP-Front-ESG'
+        subject: 'subject1'
+        filter: 'http'
+      - contract: 'APP-Back-ESG'
+        subject: 'subject2'
+        filter: 'http'
+
+    filters:
+      - filter: 'sql'
+        entry: 'sql'
+        protocol: 'tcp'
+        port: '3306'
+      - filter: 'http'
+        entry: 'http'
+        protocol: 'tcp'
+        port: '8080'
+      - filter: 'icmp'
+        entry: 'icmp'
+        protocol: 'icmp'
+        port: '0'
+      - filter: 'app1'
+        entry: 'app1'
+        protocol: 'tcp'
+        port: '6379'
+
+    epg_contracts_t1:
+      - epg: '{{ tenant1_epg1 }}'
+        contract: 'Web-access1'
+        type: 'provider'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg1 }}'
+        contract: 'default'
+        type: 'consumer'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg1 }}'
+        contract: 'DB-access1'
+        type: 'consumer'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg2 }}'
+        contract: 'default'
+        type: 'consumer'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg2 }}'
+        contract: 'DB-access1'
+        type: 'provider'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg2 }}'
+        contract: 'App-access1'
+        type: 'consumer'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg3 }}'
+        contract: 'default'
+        type: 'consumer'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg3 }}'
+        contract: 'App-access1'
+        type: 'provider'
+        epg_app: 'APP-A'
+      - epg: '{{ tenant1_epg4 }}'
+        contract: 'Web-access2'
+        type: 'provider'
+        epg_app: 'APP-B'
+      - epg: '{{ tenant1_epg4 }}'
+        contract: 'default'
+
+        type: 'consumer'
+        epg_app: 'APP-B'
+
+    epg_contracts_t2:
+      - epg: '{{ tenant2_epg1 }}'
+        contract: 'Web-access1'
+        type: 'provider'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg1 }}'
+        contract: 'default'
+        type: 'consumer'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg1 }}'
+        contract: 'DB-access1'
+        type: 'consumer'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg2 }}'
+        contract: 'default'
+        type: 'consumer'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg2 }}'
+        contract: 'DB-access1'
+        type: 'provider'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg2 }}'
+        contract: 'App-access1'
+        type: 'consumer'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg3 }}'
+        contract: 'default'
+        type: 'consumer'
+        epg_app: 'APP-C'
+      - epg: '{{ tenant2_epg3 }}'
+        contract: 'App-access1'
+        type: 'provider'
+        epg_app: 'APP-C'
+
+
+
+  tasks:
+    - name: Create Tenant1 on ACI
+      cisco.aci.aci_tenant:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        state: '{{ tenant1.state }}'
+
+    - name: Create Tenant2 on ACI
+      cisco.aci.aci_tenant:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        state: '{{ tenant2.state }}'
+
+    - name: Add VRFs to Tenant 1
+      cisco.aci.aci_vrf:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        descr: '{{ vrf.descr }}'
+        vrf: '{{ vrf.name }}'
+        policy_control_direction: 'egress'
+      loop: "{{ tenant1.vrfs }}"
+      loop_control:
+        loop_var: vrf
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Add VRFs to Tenant 2
+      cisco.aci.aci_vrf:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        descr: '{{ vrf.descr }}'
+        vrf: '{{ vrf.name }}'
+        policy_control_direction: 'egress'
+      loop: "{{ tenant2.vrfs }}"
+      loop_control:
+        loop_var: vrf
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Create Bridge Domains for Tenant 1
+      cisco.aci.aci_bd:
+        <<: *aci_login
+        tenant: "{{ tenant1.name }}"
+        bd: "{{ bd_item.name }}"
+        vrf: "{{ vrf_item.name }}"
+        state: "{{ tenant1.state }}"
+      loop: "{{ tenant1.vrfs | subelements('bds') }}"
+      loop_control:
+        loop_var: bd_items
+        index_var: bd_index
+        pause: "{{ aci_loop_pause }}"
+      vars:
+        vrf_item: "{{ bd_items.0 }}"
+        bd_item: "{{ bd_items.1}}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Create Bridge Domains for Tenant 2
+      cisco.aci.aci_bd:
+        <<: *aci_login
+        tenant: "{{ tenant2.name }}"
+        bd: "{{ bd_item.name }}"
+        vrf: "{{ vrf_item.name }}"
+        state: "{{ tenant2.state }}"
+      loop: "{{ tenant2.vrfs | subelements('bds') }}"
+      loop_control:
+        loop_var: bd_items
+        index_var: bd_index
+        pause: "{{ aci_loop_pause }}"
+      vars:
+        vrf_item: "{{ bd_items.0 }}"
+        bd_item: "{{ bd_items.1}}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Add Subnets to BD for Tenant 1
+      cisco.aci.aci_bd_subnet:
+        <<: *aci_login
+        tenant: "{{ tenant1.name }}"
+        bd: "{{ bd_item.name }}"
+        gateway: "{{ bd_item.gw }}"
+        mask: "{{ bd_item.mask }}"
+      loop: "{{ tenant1.vrfs | subelements('bds') }}"
+      loop_control:
+        loop_var: bd_items
+        index_var: bd_index
+        pause: "{{ aci_loop_pause }}"
+      vars:
+        vrf_item: "{{ bd_items.0 }}"
+        bd_item: "{{ bd_items.1}}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: Add Subnets to BD for Tenant 2
+      cisco.aci.aci_bd_subnet:
+        <<: *aci_login
+        tenant: "{{ tenant2.name }}"
+        bd: "{{ bd_item.name }}"
+        gateway: "{{ bd_item.gw }}"
+        mask: "{{ bd_item.mask }}"
+      loop: "{{ tenant2.vrfs | subelements('bds') }}"
+      loop_control:
+        loop_var: bd_items
+        index_var: bd_index
+        pause: "{{ aci_loop_pause }}"
+      vars:
+        vrf_item: "{{ bd_items.0 }}"
+        bd_item: "{{ bd_items.1}}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: add an App Profile to the Tenant 1
+      cisco.aci.aci_ap:
+        <<: *aci_login
+        tenant: '{{tenant1.name}}'
+        ap: '{{app.name}}'
+      loop: '{{tenant1.apps}}'
+      loop_control:
+        loop_var: app
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+
+    - name: add an App Profile to the Tenant 2
+      cisco.aci.aci_ap:
+        <<: *aci_login
+        tenant: '{{tenant2.name}}'
+        ap: '{{app.name}}'
+      loop: '{{tenant2.apps}}'
+      loop_control:
+        loop_var: app
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: add EPGs to App Profile for Tenant 1
+      cisco.aci.aci_epg:
+        <<: *aci_login
+        tenant: '{{tenant1.name}}'
+        ap: '{{epg.ap}}'
+        epg: '{{epg.name}}'
+        bd: '{{epg.bd}}'
+      loop: '{{tenant1.epgs}}'
+      loop_control:
+        loop_var: epg
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: add EPGs to App Profile for Tenant 2
+      cisco.aci.aci_epg:
+        <<: *aci_login
+        tenant: '{{tenant2.name}}'
+        ap: '{{epg.ap}}'
+        epg: '{{epg.name}}'
+        bd: '{{epg.bd}}'
+      loop: '{{tenant2.epgs}}'
+      loop_control:
+        loop_var: epg
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create filters for Tenant 1
+      cisco.aci.aci_filter:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        filter: '{{ item.filter }}'
+      loop: '{{ filters }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create filters for Tenant 2
+      cisco.aci.aci_filter:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        filter: '{{ item.filter }}'
+      loop: '{{ filters }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+
+    - name: create filter entry for Tenant 1
+      cisco.aci.aci_filter_entry:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        filter: '{{ item.filter }}'
+        entry: '{{ item.entry }}'
+        ether_type: ip
+        ip_protocol: '{{ item.protocol }}'
+        dst_port: '{{ item.port }}'
+      loop: '{{ filters }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create filter entry for Tenant 2
+      cisco.aci.aci_filter_entry:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        filter: '{{ item.filter }}'
+        entry: '{{ item.entry }}'
+        ether_type: ip
+        ip_protocol: '{{ item.protocol }}'
+        dst_port: '{{ item.port }}'
+      loop: '{{ filters }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create contract for Tenant 1
+      cisco.aci.aci_contract:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        contract: '{{ item.contract }}'
+        scope: 'context'
+      loop: '{{ contracts }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create contract for Tenant 2
+      cisco.aci.aci_contract:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        contract: '{{ item.contract }}'
+        scope: 'context'
+      loop: '{{ contracts }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create contract subject for Tenant 1
+      cisco.aci.aci_contract_subject:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        contract: '{{ item.contract }}'
+        subject: '{{ item.subject }}'
+      loop: '{{ contracts }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: create contract subject for Tenant 2
+      cisco.aci.aci_contract_subject:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        contract: '{{ item.contract }}'
+        subject: '{{ item.subject }}'
+      loop: '{{ contracts }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: subject to filter bindings for Tenant 1
+      cisco.aci.aci_contract_subject_to_filter:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        contract: '{{ item.contract }}'
+        subject: '{{ item.subject }}'
+        filter: '{{ item.filter }}'
+      loop: '{{ contracts }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: subject to filter bindings for Tenant 2
+      cisco.aci.aci_contract_subject_to_filter:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        contract: '{{ item.contract }}'
+        subject: '{{ item.subject }}'
+        filter: '{{ item.filter }}'
+      loop: '{{ contracts }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+
+    - name: bind epg to contract for Tenant 1
+      cisco.aci.aci_epg_to_contract:
+        <<: *aci_login
+        tenant: '{{ tenant1.name }}'
+        ap: '{{ item.epg_app }}'
+        epg: '{{ item.epg }}'
+        contract: '{{ item.contract }}'
+        contract_type: '{{ item.type }}'
+      loop: '{{ epg_contracts_t1 }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      delegate_to: localhost
+
+    - name: bind epg to contract for Tenant 2
+      cisco.aci.aci_epg_to_contract:
+        <<: *aci_login
+        tenant: '{{ tenant2.name }}'
+        ap: '{{ item.epg_app }}'
+        epg: '{{ item.epg }}'
+        contract: '{{ item.contract }}'
+        contract_type: '{{ item.type }}'
+      loop: '{{ epg_contracts_t2 }}'
+      loop_control:
+        pause: "{{ aci_loop_pause }}"
+      register: aci_result
+      until: aci_result is succeeded
+      retries: "{{ aci_retries }}"
+      delay: "{{ aci_retry_delay }}"
+      delegate_to: localhost

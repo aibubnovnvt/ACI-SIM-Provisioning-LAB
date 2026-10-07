@@ -1,0 +1,127 @@
+---
+# ACI_Simulator_Site.yml
+#
+# Consolidated, single-command orchestration for the full POD1 provisioning
+# sequence. Replaces the need to run each playbook (and the static_ep
+# scripts) as separate manual commands while preserving:
+#   - strict ordering (each stage only starts after the previous succeeded)
+#   - the existing per-task tags inside each imported playbook (tags are
+#     additive/layered, nothing is replaced or hidden)
+#   - the inter-stage cool-down that the old ACI_provisioning_POD1.sh gave
+#     via `sleep 30`, now expressed as native Ansible pause tasks
+#
+# Usage:
+#   ansible-playbook -i POD1 ACI_Simulator_Site.yml
+#
+# Run only a subset of stages (still respects the fine-grained tags that
+# already exist inside each playbook, e.g. --tags startup_script):
+#   ansible-playbook -i POD1 ACI_Simulator_Site.yml --tags tenants,networking
+#
+# Skip a stage:
+#   ansible-playbook -i POD1 ACI_Simulator_Site.yml --skip-tags dns
+#
+# Override the cool-down between stages (seconds):
+#   ansible-playbook -i POD1 ACI_Simulator_Site.yml -e aci_stage_pause=10
+
+- import_playbook: ACI_Simulator_Full.yml
+  tags: full
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: full
+  tasks:
+    - name: Cool-down after ACI_Simulator_Full
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- import_playbook: ACI_Simulator_Tenants.yml
+  tags: tenants
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: tenants
+  tasks:
+    - name: Cool-down after ACI_Simulator_Tenants
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- import_playbook: ACI_Simulator_Networking.yml
+  tags: networking
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: networking
+  tasks:
+    - name: Cool-down after ACI_Simulator_Networking
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- import_playbook: ACI_Simulator_ESG.yml
+  tags: esg
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: esg
+  tasks:
+    - name: Cool-down after ACI_Simulator_ESG
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- import_playbook: ACI_Simulator_HTTP_RPS_throttle.yml
+  tags: http_rps_throttle
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: http_rps_throttle
+  tasks:
+    - name: Cool-down after ACI_Simulator_HTTP_RPS_throttle
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- import_playbook: ACI_Simulator_AccessPolicy_Bare_Metal.yml
+  tags: access_policy
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: access_policy
+  tasks:
+    - name: Cool-down after ACI_Simulator_AccessPolicy_Bare_Metal
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- import_playbook: ACI_Simulator_DNS.yml
+  tags: dns
+
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: dns
+  tasks:
+    - name: Cool-down after ACI_Simulator_DNS
+      ansible.builtin.pause:
+        seconds: "{{ aci_stage_pause | default(30) }}"
+
+- name: Provision static endpoints (bulk EP python scripts)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: static_ep
+  tasks:
+    - name: Run EP_provisioning_bulk_5.sh (executes static_ep/*.py in order, fails fast)
+      ansible.builtin.command: ./EP_provisioning_bulk_5.sh
+      args:
+        chdir: "{{ playbook_dir }}"
+      register: ep_bulk_result
+      changed_when: true
+
+    - name: Show static endpoint provisioning output
+      ansible.builtin.debug:
+        var: ep_bulk_result.stdout_lines
+      when:
+        - debug_output | default(false)

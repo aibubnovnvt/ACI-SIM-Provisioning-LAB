@@ -1,0 +1,15 @@
+# Python virtual environments - recreate locally via ./setup_env.sh
+# (do not commit; these are large, platform-specific, and fully
+# reproducible from requirements.txt + requirements.yml)
+venv/
+gitenv/
+test_env/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / OS
+.vscode/
+.DS_Store

@@ -1,0 +1,52 @@
+---
+- name: Setup and Configure ACI Simulator
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+    - cisco.aci
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+    aci_data:
+      fabric: # Fabric policies
+        global_policy:
+        dns:
+          - name: "default"
+            description: ""
+            management: "oob-default"
+            domain:
+              - name: "aaalab.demo"
+                description: ""
+                default: "yes"
+            provider:
+              - addr: "198.18.1.30"
+                preferred: "yes"
+
+  tasks:
+
+### Set winsrv as DNS provider in 'default' DNS profile
+
+    - name: Add a new DNS provider 1
+      cisco.aci.aci_dns_provider:
+        <<: *aci_login      
+        dns_profile: 'default'
+        address: 198.18.1.30
+        preferred: true
+        state: present
+      delegate_to: localhost
+
+    - name: Add a new DNS domain
+      cisco.aci.aci_dns_domain:
+        <<: *aci_login
+        dns_profile: default
+        domain: aaalab.demo
+        state: present
+      delegate_to: localhost
+

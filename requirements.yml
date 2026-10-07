@@ -1,0 +1,19 @@
+---
+# Ansible Galaxy collection requirements.
+#
+# These pin the exact collection versions this project was built and
+# tested against. The "ansible" pip package (see requirements.txt) bundles
+# its own older copies of some of these collections; installing the
+# versions below into the default collections path (~/.ansible/collections)
+# takes precedence over the bundled ones, matching the tested environment.
+#
+# Install with:
+#   ansible-galaxy collection install -r requirements.yml
+
+collections:
+  - name: cisco.aci
+    version: "2.10.1"
+  - name: ansible.netcommon
+    version: "7.1.0"
+  - name: ansible.utils
+    version: "5.1.0"

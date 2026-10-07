@@ -1,0 +1,36 @@
+---
+- name: Setup and Configure ACI Simulator
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  collections:
+    - cisco.aci
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/env python3"
+    aci_login: &aci_login
+      hostname: "{{ apic_host }}"
+      username: "{{ apic_user }}"
+      password: "{{ apic_pass }}"
+      use_proxy: no
+      validate_certs: "{{ apic_validate_certs }}"
+
+  tasks:
+
+    - name: Throtthle default comm-policy
+      cisco.aci.aci_fabric_management_access:
+        <<: *aci_login
+        name: default
+        http:
+          throttle: enabled
+          throttle_rate: 40
+          throttle_unit: requests_per_second
+        https:
+          throttle: enabled
+          throttle_rate: 40
+          throttle_unit: requests_per_second
+        state: present
+      delegate_to: localhost 
+      tags:
+        - comm-policy-throttle     
+
