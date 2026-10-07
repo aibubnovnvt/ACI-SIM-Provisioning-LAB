@@ -224,7 +224,7 @@
 
     - name: Wait for APIC Processes to start before attempting to Log-in
       pause:
-        seconds: 400
+        seconds: 300
       tags:
         - startup_script
 
