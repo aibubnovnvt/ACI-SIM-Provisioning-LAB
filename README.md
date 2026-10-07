@@ -7,17 +7,20 @@ available for integration with the other components of the network.
 
 ## Step-by-Step: Running the Automation
 
-1. Install git on the Ubuntu machine:
+1. Get to the Automation server.
+2. Install git on the Ubuntu machine:
    ```bash
    sudo apt-get update
    sudo apt-get install -y git
    ```
-2. Get to the Automation server.
 3. Pull down the project from git:
    ```bash
-   git clone https://github.com/aibubnovnvt/ACI-SIM-Provisioning-LAB.git .
+   git clone https://github.com/aibubnovnvt/ACI-SIM-Provisioning-LAB.git
    ```
-4. `cd` into the project folder.
+4. `cd` into the project folder:
+   ```bash
+   cd ACI-SIM-Provisioning-LAB
+   ```
 5. Execute environment setup:
    ```bash
    ./setup_env.sh
